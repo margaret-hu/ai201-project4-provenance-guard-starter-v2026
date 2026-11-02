@@ -42,61 +42,81 @@ Two things worth knowing before you pick numbers:
   a **miss**.
 
 ---
-## 1.
+## 1. False Positives
 
-<!-- Your criterion. It must name a number. -->
+Of 10 pieces I wrote myself and froze before the first run (at least 3 plain, 
+at least 2 formal), in each of the three trials at most 1 of the 10 gets 
+`guess: "ai"`, and at most 4 of the 10 get anything other than `human`.
 
-
-
-**Why this target:**
-
-
-
----
-
-## 2.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
+**Why this target:** An `ai` label is an accusation, so it gets the strict
+limit: 1 in 10. `unsure` costs a writer very little, so it gets a looser one.
+The floor of 6 clearly `human` out of 10, with the plain and formal pieces
+included on purpose, still fails a detector that is guessing.
 
 
 
 ---
 
-## 3.
+## 2. Score Spread
 
-<!-- Your criterion. -->
+Using 6 AI and 6 human texts on the same six topics (not the pieces from 
+criterion 1), in each trial the median `confidence` of the AI group is at 
+least 0.30 above the median of the human group, and at least 5 of 6 in each 
+group land on their own side of 0.50 (AI above, human below).
 
-
-
-**Why this target:**
-
-
-
----
-
-## 4.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
+**Why this target:** 0.30 is the width of the unsure band (0.35 to 0.65), so the
+two groups cannot both sit inside it. I use medians and "5 of 6" rather than
+min and max so that one outlier among six cannot flip the result by itself.
 
 
 
 ---
 
-## 5.
+## 3. Label Coverage
 
-<!-- Your criterion. -->
+Using 16 inputs chosen in advance (6 AI, 6 human, 4 borderline), all three 
+`guess` values appear in every trial at least twice, and every `guess` matches 
+the thresholds in `config.py` applied to `confidence`.
+
+**Why this target:** "At least once" can pass on a fluke, so I ask for twice.
+A label that is never produced is a dead code path, and a combined score stuck
+in a narrow range (for example a style signal that never varies) would show up
+here. The mapping check is deterministic, so it separates a mapping bug from
+trial-to-trial noise.
 
 
 
-**Why this target:**
+---
+
+## 4. The Appeal Path
+
+All 5 appeals on valid `content_id`s return a 2xx status code with 
+`under_review`, and `/log` shows an appeal entry with the reasoning while the 
+original decision entry is unchanged. All 4 invalid appeals (unknown 
+`content_id`, missing `content_id`, empty `reasoning`, whitespace-only 
+`reasoning`) return a 4xx status code and write no appeal entry.
+
+**Why this target:** The appeal is the only recourse after a wrong accusation,
+so a dropped or unrecorded appeal is the worst failure here, and the target is
+all-or-nothing. `run_eval.py` only posts to `/submit`, so I test this by hand
+and say so in the write-up.
+
+
+
+---
+
+## 5. Bad Input
+
+Requests with `text` missing, empty content, whitespace-only, `null`, a number, 
+`creator_id` missing, a JSON list instead of an object, or text over my cap of 
+10,000 characters must return a 4xx status code with a JSON `error` and 
+`message`. The service must still answer a valid `/submit` sent after each rejected 
+request.
+
+**Why this target:** Each case is a different way a body can be wrong, and a
+crash on malformed input is one of the most common real failures. "The service
+survives" is observable. The 10,000-character cap is generous, because the
+detector only reads about the first 300 words anyway.
 
 
 
