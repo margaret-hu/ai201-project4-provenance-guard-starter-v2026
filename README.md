@@ -39,7 +39,7 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
-1. A `POST /submit` request arrives at the web service, which receives the text, validates it, and assigns a `content_id`.
+1. A `POST /submit` request arrives at Provenance Guard, a web service, which receives the text, validates it, and assigns a `content_id`.
 2. The predictability signal runs GPT-2, a language model, to measure how predictable the text is, with a 0–1 score. Higher means more AI-like.
 3. The style signal measures features such as sentence-length variation, vocabulary variety, and punctuation, without interpreting the text's meaning. It returns a second 0–1 score.
 4. The two scores are merged by `scoring.py::combine_signals` into a single 0–1 `confidence` score.
