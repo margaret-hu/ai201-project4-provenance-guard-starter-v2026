@@ -31,6 +31,8 @@ from flask import Flask, jsonify, request
 import audit
 import config
 import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -219,12 +221,13 @@ def submit():
 
     content_id = str(uuid.uuid4())
 
-    # Placeholders until the style signal and scoring are built.
+    style_score = stylometry.style_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score)
+
+     # Placeholders until the label is built (Milestone 5).
     guess = "ai"
-    confidence = 0.73
+    confidence = combined_score
     label = "likely_ai"
-    style_score = 0.65
-    combined_score = None
 
     audit.log_decision(
         content_id=content_id,
