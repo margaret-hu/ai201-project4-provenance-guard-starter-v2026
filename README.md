@@ -63,7 +63,7 @@
 
 **Why that might differ between human and AI writing:** A language model writes by picking likely next words, so text it produced tends to be text another model finds easy to predict. Human writing wanders more, with odd word choices and specific details.
 
-**What it can't see:** Authorship. It rewards common words in short, ordinary sentences, and plenty of people write that way. On my calibration inputs it did exactly this. My own plainly written bio scored 0.844, higher than the AI-written tea paragraph at 0.763. The edited AI text scored the lowest of all (0.655) because its names, dates and places raised the perplexity. Plain human writing is the case this signal is most likely to get wrong.
+**What it can't see:** Authorship. It rewards common words in short, ordinary sentences, and plenty of people write that way. On my calibration inputs it did exactly this. My own plainly written bio scored 0.844, higher than the AI-written tea paragraph at 0.763. The edited AI text scored the lowest of all (0.655) probably because its names, dates and places raised the perplexity, though I did not test that. Plain human writing is the case this signal is most likely to get wrong.
 
 ### Signal two — the style signal
 
@@ -100,8 +100,6 @@ I first planned 0.5/0.5 with a 0.4 gap, but a model score of 0.95 against a styl
 
 My four calibration inputs, run through both signals and the combining rule:
 
-The Label column is what the thresholds imply. `/submit` still returns a placeholder label until Milestone 5.
-
 | Piece | Perplexity | Model | Style | Combined | Label |
 |---|---|---|---|---|---|
 | clearly_ai (tea) | 21.7 | 0.763 | 0.507 | 0.686 | unsure |
@@ -111,10 +109,11 @@ The Label column is what the thresholds imply. `/submit` still returns a placeho
 
 The biggest split is my own bio. The model signal reads it as AI (0.844) while the style signal sits in the middle (0.551), a gap of 0.29. That is below the 0.50 disagreement gap, so the rule does not step in. It averages the two and gets 0.756, which falls in unsure, just under the 0.78 AI threshold. The averaging and the wide unsure band are what stop my own writing being called AI.
 
+A made-up pair, model 0.9 and style 0.1, has a gap of 0.8, so `combine_signals` returns 0.5 (unsure) instead of the 0.66 average. I confirmed this by calling it directly.
+
 What this run also showed:
 
 - **The signals did not separate human from AI.** The combined scores rank my bio highest, then meditation, tea and the edited AI text, the reverse of what I expected. Changing the weights or the gap would move all four pieces together, so it would not fix this. I did not retune the model signal's midpoint either, because four texts is too few to tune on.
-- **The disagreement rule never triggered.** The signals differed by only 0.1–0.3 on every input, because the style signal barely moves.
 - **Every input landed in unsure.** That is the safe way to fail, since nobody is wrongly accused, but the service says little on these inputs.
 - **My bio is close to the AI threshold.** A slightly more predictable human text would be labelled AI. This is the false positive I am most worried about, and the 0.78 threshold is the main protection against it.
 
@@ -124,21 +123,14 @@ What this run also showed:
 
 ## Label Variants
 
-<!-- The exact text of all three labels, as a reader would see them, and the
-     score range each covers.
-
-     Write them for someone who has never heard the word "threshold". -->
-
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.22 or below | "We think this was probably written by a person." |
+| unsure | above 0.22 and below 0.78 | "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way." |
+| high-confidence AI | 0.78 or above | "This text shows patterns often seen in AI-generated writing. This is an automated estimate and can be wrong." |
 
 **Why I worded the "unsure" one this way:**
-<!-- It's the hardest of the three. It has to admit uncertainty without
-     sounding like an accusation, because the person reading it may well have
-     written every word themselves. -->
+Most of my calibration inputs, including my own bio, landed in this band, so it's the label writers will see most. It says plainly that we're not sure, tells the writer no action is needed, and names plain writing as a known trigger so it doesn't read as an accusation. It avoids numbers and words like "threshold" or "flagged".
 
 
 
@@ -146,24 +138,25 @@ What this run also showed:
 
 ## Sample Run
 
-<!-- One submission and one appeal, pasted as text: the request, the response,
-     and the log entries. -->
+I submitted my formal_human piece (the meditation essay I wrote myself). It scored 0.721, just under the 0.78 AI threshold, so it was labelled unsure. I appealed it anyway to show the appeal path.
 
 **A submission**
-
-<!-- The response needs content_id, guess, confidence, label, AND both
-     signal scores - model_score and style_score. Unit 8's tools read those
-     two off the response, so leaving them out costs you next unit's
-     diagnostics. -->
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "The subject of meditation presents interesting ideas regarding achieving happiness. It may not be suitable or easy for everyone, but studies show that people who meditate regularly have improved their physical, mental, and emotional well-being. All you need to meditate is a quiet place to sit, clear your mind, and focus on your breathing. However, just as the world possesses a multitude of cultures, meditation has branched into many different forms. Despite its variations, perhaps the hardest part is accepting the undeniable truth that pain is inevitable. Only by finding pleasure within pain can we find peace and contentment. It may not be the happiness we expected, but know that it is a happiness we can achieve.", "creator_id": "formal_human"}'
 ```
 
 ```json
-
+{
+  "confidence": 0.7207253832352577,
+  "content_id": "f8268153-7fc6-4fef-a7ef-30b9683805af",
+  "guess": "unsure",
+  "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+  "model_score": 0.7819,
+  "style_score": 0.5779846107841924
+}
 ```
 
 **An appeal**
