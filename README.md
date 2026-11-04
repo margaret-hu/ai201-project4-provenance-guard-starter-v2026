@@ -164,22 +164,51 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id": "f8268153-7fc6-4fef-a7ef-30b9683805af", "reasoning": "I wrote this passage on meditation myself. Its formal, reflective tone likely triggered the AI label. I can share my drafts on request and ask for a human review."}'
 ```
 
 ```json
-
+{
+  "content_id": "f8268153-7fc6-4fef-a7ef-30b9683805af",
+  "message": "Your appeal has been recorded and the decision is now under review.",
+  "status": "under_review"
+}
 ```
 
 **What the log shows afterwards**
 
 ```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+$ curl "http://127.0.0.1:5000/log?limit=2"
 ```
 
 ```json
-
+{
+  "count": 2,
+  "entries": [
+    {
+      "combined_score": 0.7207253832352577,
+      "content_id": "f8268153-7fc6-4fef-a7ef-30b9683805af",
+      "creator_id": "formal_human",
+      "guess": "unsure",
+      "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+      "model_score": 0.7819,
+      "status": "decided",
+      "style_score": 0.5779846107841924,
+      "timestamp": "2026-11-04T05:19:45+00:00"
+    },
+    {
+      "content_id": "f8268153-7fc6-4fef-a7ef-30b9683805af",
+      "creator_id": "formal_human",
+      "event": "appeal",
+      "reasoning": "I wrote this passage on meditation myself. Its formal, reflective tone likely triggered the AI label. I can share my drafts on request and ask for a human review.",
+      "status": "under_review",
+      "timestamp": "2026-11-04T05:19:45+00:00"
+    }
+  ]
+}
 ```
+
+The original decision stays in the log with status `decided`, and the appeal is added after it with status `under_review`. Nothing is overwritten.
 
 ---
 
@@ -187,15 +216,15 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Whether an equal-weight average with 0.22/0.78 thresholds, where disagreement pulls toward unsure, would work as my combining rule.
+- *What came back:* The idea was sound, but my style signal stayed near 0.5, so the human and AI labels were almost unreachable. It suggested 0.7/0.3 weights and an explicit rule that sets the score to 0.5 when the signals differ by more than a gap.
+- *What I changed:* I kept my own 0.22/0.78 thresholds. The first gap (0.4) blocked confident AI results in testing, so it became 0.5. I recorded my calibration results in the README rather than tuning the numbers to fit them.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* What was wrong with my `curl.exe` command for `/appeal`, which I ran in PowerShell with the JSON body in single quotes.
+- *What came back:* PowerShell strips the inner double quotes before `curl.exe` sees them, so the server got invalid JSON. My route turned that into an empty object, which is why the error said `content_id is required` instead of `invalid_json`. It suggested a here-string piped to curl, `Invoke-RestMethod`, or escaping every quote.
+- *What I changed:* I put the JSON in a here-string and piped it to `curl.exe` with `--data-binary "@-"`. The appeal then went through and showed up in the log.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
