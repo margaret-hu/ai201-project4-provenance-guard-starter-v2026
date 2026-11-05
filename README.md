@@ -247,7 +247,7 @@ $ python run_attacks.py --flood 15
 200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
 
-The first 5 requests went through and the other 10 were blocked with 429, which matches the 5 per minute limit. `GET /log` recorded the rejections as `event: rejected`, `reason: rate_limited`, `limit: "5 per 1 minute"`.
+That matches the 5 per minute limit, and `GET /log` recorded each rejection (`event: rejected`, `reason: rate_limited`).
 
 ---
 
