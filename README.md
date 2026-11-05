@@ -232,25 +232,22 @@ The original decision stays in the log with status `decided`, and the appeal is 
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 50 per day
 
-**Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+**Why those numbers and not others:** A real writer submits a few pieces an hour, and a heavy day is about 10 to 15, so 50 per day is more than 3 times that and 5 per minute still covers a quick resubmit after an edit. A script mapping my 0.22 and 0.78 thresholds needs hundreds of probes, which at 50 per day takes many days instead of the starter default's 200 per day. I didn't go lower because blocking a real writer is worse than slowing an attacker, and I didn't go higher because every request runs the model.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** Each `creator_id`, falling back to IP address when none is sent. Two writers in one household get separate budgets. But `creator_id` is self-declared, so a script can send a new one with every request and never hit the limit. A real fix needs an API key or login, or a per-IP cap alongside the per-creator one.
+
+**Other limits:** Counts live in memory and reset on restart, and `/appeal` isn't limited.
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```
+$ python run_attacks.py --flood 15
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
 
-```
+The first 5 requests went through and the other 10 were blocked with 429, which matches the 5 per minute limit. `GET /log` recorded the rejections as `event: rejected`, `reason: rate_limited`, `limit: "5 per 1 minute"`.
 
 ---
 
