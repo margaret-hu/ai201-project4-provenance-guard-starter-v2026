@@ -382,38 +382,98 @@ threshold; this was the only short natural-language sentence that crossed it.
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+`run_eval.py --label before`, saved as `results/run_2026-11-10_1624_before.md`.
+Criterion 4 is not in that file because `run_eval.py` only posts to `/submit`; it
+comes from `check_appeal.py`.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. False positives | per trial: at most 1 of 10 `ai`, at most 4 of 10 not `human` | 0 `ai`, 0 `human`, 10 `unsure` | same | same | **Miss** |
+| 2. Score spread | AI median at least 0.30 above human; at least 5 of 6 per group on its own side of 0.50 | medians 0.565 vs 0.704, gap **-0.139**; AI above 0.50: 4/6, human below: 0/6 | same | same | **Miss** |
+| 3. Label coverage | each `guess` at least twice per trial; every `guess` matches the thresholds | 16 `unsure`, 0 `ai`, 0 `human` | same | same | **Miss** |
+| 4. Appeal path | 5/5 valid appeals 2xx, `under_review`, logged; 4/4 invalid appeals 4xx, nothing logged | `check_appeal.py`: 17/17 checks | 17/17 | 17/17 | **Pass** |
+| 5. Bad input | every bad body 4xx with `error` + `message`; valid `/submit` still works after each | 7/7 returned 400 | 7/7 | 7/7 | **Pass** |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+**Notes**
+
+- Criterion 1: not-`human` was 10 against a limit of 4.
+- Criterion 2: the gap has the wrong sign (AI scored lower than human).
+- Criterion 3: the threshold-mapping check passed, but coverage failed.
+- Criterion 4: three runs of `check_appeal.py`, each 17/17. No model is involved.
+- Criterion 5: passes on the 7 `run_eval.py` bodies. `check_bad_input.py` (JSON list,
+  survival check) ran twice; the log holds 9 valid decisions from each run, one per
+  bad request, so the service kept answering.
+
+All three trials were identical, since the model is deterministic here. Criterion 4
+was run by hand three times: `check_appeal.py` passed 17/17 each time, and
+`logs/audit.jsonl` holds 15 appeals (5 per run), each after its own decision and each
+with its reasoning, and no appeal entry from any of the invalid cases.
+
+**Real output from one trial**: the first Trial 1 entry for "my own writing" in
+`results/run_2026-11-10_1624_before.md`, produced by `run_eval.py::main` calling
+`app.py::submit` (scores from `detector.py::model_signal` and
+`stylometry.py::style_signal`, combined in `scoring.py::combine_signals`, labelled
+by `scoring.py::score_to_label`):
 
 ```json
-
+{
+  "status": 200,
+  "guess": "unsure",
+  "confidence": 0.7392801439468308,
+  "model_score": 0.8418,
+  "style_score": 0.5000671464894362,
+  "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+  "sent": "My name is Margaret Hu. A few years ago, I graduated from CSU East Bay"
+}
 ```
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+**Criteria 1, 2, 3: one problem, in signal one, the combining rule and the label
+mapping.**
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+- **Signal one ranks the groups backwards (criterion 2).** On the 12 texts, AI
+  `model_score` ran 0.335 to 0.723 and human 0.733 to 0.786, so every human text
+  scored above every AI text. gpt2 finds plain prose predictable whoever wrote it,
+  the blind spot already noted in Signals and Scoring. Signal two did not help: AI
+  0.547 to 0.630, human 0.534 to 0.619, a complete overlap.
+- **The thresholds are outside the range the signals produce (criteria 3 and 1).**
+  With 0.7/0.3 weights and a style signal between about 0.5 and 0.68, ordinary text
+  scored 0.399 to 0.770 combined, so neither 0.78 nor 0.22 was reached. All 16
+  inputs were `unsure`, and all 10 of my own texts were `unsure`: the `ai` limit
+  held (highest 0.770, 0.010 under), but no text could be `human`. `score_to_label`
+  works as written.
+- The safe direction held: nobody was accused. The cost is that the service says
+  almost nothing on ordinary text.
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+**The 14 broken attacks (attack run, `logs/audit.jsonl` scores):**
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+- **EV02, EV03, EV04, EV06, EV07, EV09 (combining rule and thresholds).** Model
+  scores were 0.57 to 0.70 and style 0.32 to 0.62, combined 0.50 to 0.64. Where the
+  targeted signal moved (style 0.355 on EV02, 0.321 on EV06) it pulled combined down
+  to 0.52 and 0.50, but the model scores were already too low for the `ai` label,
+  which with a neutral style score needs about 0.9. On EV04 and EV07 the targeted
+  signal barely moved (model 0.611, style 0.621) and they still broke. Same root
+  cause as the criteria above.
+- **EV01, EV08 (signal one).** Model score fell to 0.1635 (typos) and 0.2452 (text
+  below the token window) while style stayed at 0.613 and 0.537, so the damage was in
+  signal one even though I targeted signal two for EV01. I checked EV01 by correcting
+  its eight typos: perplexity went from 124.8 with typos to 29.0 clean, so the model
+  score went from 0.1635 to 0.6694, while the style score was 0.613 either way.
+- **MF05, MF06, MF07, MF08 (both signals, and the route).** Degenerate input got
+  confident `ai` labels: model 0.998, 0.997, 0.906, 0.988 and style 0.65, 1.0, 1.0,
+  0.817. MF06 and MF07 hit a style score of exactly 1.0 because
+  `stylometry.words` only matches `[a-z0-9']`, so emoji and Arabic give zero words and
+  all three measures return 0.0, which `style_signal` flips to maximum AI-like. MF08 (57,640 characters) was accepted because the route had no length
+  cap then. `MAX_TEXT_CHARS` is 10,000 in `app.py::submit` now.
+- **RQ02, RQ06 (the route).** `creator_id` missing, or an object, was accepted and
+  logged as `null` or `{"id": "x"}`. `app.py::submit` now requires a non-empty
+  string; a missing `creator_id` returns 400 in the run above, and an object
+  `creator_id` (`{"id": "x"}`) now returns 400 `missing_creator_id` when I re-sent it by hand.
+  RQ06's combined score of 0.5 is separate: model 0.049 against style 0.65 is a
+  gap of 0.60, over the 0.50 disagreement gap.
+
+**Criteria 4 and 5:** no miss to diagnose.
 
 
 
