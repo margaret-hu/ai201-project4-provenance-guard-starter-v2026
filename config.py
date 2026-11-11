@@ -88,8 +88,8 @@ DISAGREEMENT_SCORE = 0.5
 # getting through. There is no setting that avoids the trade — only settings
 # that decide who pays for it.
 
-HUMAN_THRESHOLD = 0.22
-AI_THRESHOLD = 0.78
+HUMAN_THRESHOLD = 0.38
+AI_THRESHOLD = 0.65
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
