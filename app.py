@@ -189,6 +189,14 @@ def submit():
     if not isinstance(text, str) or not text.strip():
         return jsonify({"error": "missing_text", "message": "Text is required."}), 400
 
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return jsonify({"error": "missing_creator_id",
+                        "message": "creator_id is required."}), 400
+
+    if len(text) > config.MAX_TEXT_CHARS:
+        return jsonify({"error": "text_too_long",
+                        "message": f"Text must be at most {config.MAX_TEXT_CHARS} characters."}), 400
+
     try:
         model_score = detector.model_signal(text)
     except ValueError as exc:
