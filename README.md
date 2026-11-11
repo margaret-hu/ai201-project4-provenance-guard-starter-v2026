@@ -569,20 +569,143 @@ the rest.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** `scoring.py::combine_signals` now uses `1 - model_score` in place
+of `model_score`, before both the disagreement check and the weighted average. It is
+switched by a new setting, `config.MODEL_SIGNAL_INVERTED = True`, so setting it to
+`False` restores the old behavior. Signal one itself is unchanged, and `/submit` and
+the audit log still report the raw `model_score`. Only `combined_score` and the label
+use the flipped value. Weights and thresholds are unchanged, because the thresholds
+come after the ranking.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** "Signal one ranks the groups backwards (criterion
+2)" in Diagnoses above, which also drives criteria 1 and 3. Every human text scored
+above every AI text on the model signal.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+56 attacks run on 2026-11-10 at 22:28 with the flip on (full output in
+[results/attack_run_2026-11-10_2228_after.md](results/attack_run_2026-11-10_2228_after.md)).
+I marked them with the same rules as the before run. **45 held, 11 broke** (42 and
+14 before).
+
+| Family | Attacks | Held before | Held after | Broke after |
+|---|---|---|---|---|
+| evasion | 10 | 2 | 1 | 9 |
+| false_positive | 8 | 8 | 8 | 0 |
+| prompt_injection | 6 | 6 | 6 | 0 |
+| malformed | 20 | 14 | 18 | 2 |
+| flood_same_creator | 12 | 12 | 12 | 0 |
+| **Total** | **56** | **42** | **45** | **11** |
+
+**Attacks whose mark changed:**
+
+| ID | Before | After | Why |
+|---|---|---|---|
+| EV10 | `ai` 0.905, HELD | `unsure` 0.500, **BROKE** | Model 0.979 (flipped to 0.021) against style 0.730 is a gap of 0.71, so the disagreement rule returned 0.5. The flip made this evasion work. |
+| MF03 | `unsure` 0.500, HELD | `ai` 0.895, **BROKE** | Control characters: model score 0.0 (flipped to 1.0) with style 0.65. Before, the gap was 0.65 and it held by luck; the flip removed that. |
+| MF04 | `unsure` 0.500, HELD | `ai` 0.992, **BROKE** | Punctuation only: model 0.011 (flipped to 0.989), style 1.0. Same cause as MF03. |
+| MF05 | `ai` 0.893, BROKE | `unsure` 0.500, HELD | Model 0.998 flipped to 0.002 against style 0.65: gap over 0.50, so 0.5. Held by the disagreement rule, not because the text was judged. |
+| MF06 | `ai` 0.998, BROKE | `unsure` 0.500, HELD | Same: model 0.997 flipped, style 1.0. |
+| MF07 | `ai` 0.934, BROKE | `unsure` 0.500, HELD | Same: model 0.906 flipped, style 1.0. |
+| MF08 | `ai` 0.936, BROKE | 400, HELD | The 10,000-character cap, added before the flip. Not the flip. |
+| RQ02, RQ06 | accepted, BROKE | 400, HELD | The `creator_id` validation, added before the flip. Not the flip. |
+
+So the flip is a net zero on attacks (MF05, MF06, MF07 gained; EV10, MF03, MF04
+lost), and the validation fixes account for the whole net gain of 3. The 11
+that still break are EV01 to EV04, EV06 to EV10 (9 evasions) and MF03, MF04.
+Every `ai` label from the flood rows (0.875) is still behind the rate limit.
+
+The false positives got safer by a wide margin. FP06 and FP07 sat 0.005 under the
+`ai` threshold (0.775, 0.776); they now score 0.241 and 0.242. FP01 to FP08 range
+0.241 to 0.617 and none is near 0.78.
 
 
+
+### Run Log — After
+
+`run_eval.py --label after`, saved as `results/run_2026-11-10_2229_after.md`. As
+before, criterion 4 comes from `check_appeal.py` and the criterion 5 error-body check
+from `check_bad_input.py`. Targets are the same as in the before table.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. False positives | per trial: at most 1 of 10 `ai`, at most 4 of 10 not `human` | 0 `ai`, 0 `human`, 10 `unsure` (combined 0.261 to 0.524) | same | same | **MISSED** |
+| 2. Score spread | AI median at least 0.30 above human; at least 5 of 6 per group on its own side of 0.50 | medians AI 0.490 vs human 0.341, gap **+0.149**; AI above 0.50: 3/6, human below: 6/6 | same | same | **MISSED** |
+| 3. Label coverage | each `guess` at least twice per trial; every `guess` matches the thresholds | 16 `unsure`, 0 `ai`, 0 `human` | same | same | **MISSED** |
+| 4. Appeal path | 5/5 valid appeals 2xx, `under_review`, logged; 4/4 invalid appeals 4xx, nothing logged | `check_appeal.py`: 17/17 checks | 17/17 | 17/17 | **MET** |
+| 5. Bad input | every bad body 4xx with `error` + `message`; valid `/submit` still works after each | `check_bad_input.py`: 9/9 | not repeated | not repeated | **MET** |
+
+**Notes**
+
+- Criterion 1: the lowest combined score on my own writing is 0.261, above the 0.22
+  `human` threshold, so none can be `human`.
+- The three model trials are identical, as before (the model is deterministic here).
+- Criterion 5: `run_eval.py` shows 6 of 7 bodies at 400, and the no-`creator_id` body
+  at **429**. That is the rate limiter, not a regression: the attack run finished
+  seconds earlier, and bad bodies with no usable `creator_id` count against one shared
+  `unknown` address (5 per minute). After waiting a minute, `check_bad_input.py`
+  returned 400 with `error` and `message` for that body (9/9 passed, one run, not
+  three). Criterion 4 does not touch scoring and passed 17/17 three times.
 
 **Did it help, and how do I know:**
 
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+**Partly, and less than the numbers suggest.** Compared with the before runs:
+
+- **Attacks:** 45 held against 42, but none of the +3 is the flip (see the table
+  above). Evasion got worse, 2 held to 1. MF05 to MF07 now hold only because the
+  disagreement rule fires, the same luck that MF03 and MF04 used to have.
+- **Criterion 2:** the median gap went from -0.139 to +0.149, and human texts below
+  0.50 went from 0/6 to 6/6. It still misses the 0.30 target and AI texts above 0.50
+  went from 4/6 to 3/6.
+- **Criteria 1 and 3:** no change in verdict. All 10 of my texts are still `unsure`
+  (0 `ai`, 0 `human`), and all 16 inputs are `unsure`. The flip moved the scores to the
+  other end of the range without making any reach a threshold, because the thresholds
+  were never changed. The service still says nothing on ordinary text; it just does so
+  while leaning the other way.
+- **Better:** real writers are further from a false accusation. FP06 and FP07 went
+  from 0.005 under the `ai` threshold to about 0.54 under it.
+- **Worse:** EV10, MF03 and MF04. The flip also makes the model signal's two blind
+  spots point the opposite way. Text gpt2 finds very predictable (repetition, control
+  characters, punctuation) used to push toward `ai` and now pushes toward `human`.
+  And, as the held-out check below shows (a separate scratch script, not part of
+  the two runs above), plain AI text now scores as human-like.
+
+The flip fixed the ranking on my 12 development texts, which is what the diagnosis
+found. It did not fix the signal, and I should not call criteria 1 to 3 improved.
+The change that would move them is the thresholds, or a combined range wider than
+0.26 to 0.63; I have not tried either.
+
+
+
+**Held-out check** (scratch script, separate from the attack run and run log above).
+The 12
+texts have a confound: the AI texts are ornate meditation essays and the human texts
+are plain student prose. So I added 16 held-out texts the flip was not chosen on: 8
+plain AI paragraphs (written by Claude) and 8 ornate human passages (public-domain
+classics, quoted from memory, so possibly not word for word). I called the model
+signal, style signal and `combine_signals` directly on them, with the flip off and on.
+
+| Group | Perplexity (median) | Model signal (median) | Burstiness (median) |
+|---|---|---|---|
+| Dev AI (ornate) | 39.5 | 0.553 | 0.46 |
+| Dev human (plain) | 21.6 | 0.763 | 0.81 |
+| **Held-out AI (plain)** | 19.3 | **0.794** | 0.51 |
+| **Held-out human (ornate)** | 29.5 | **0.663** | 0.49 |
+
+| Set | Gap, AI minus human (median combined score) | Flip off | Flip on |
+|---|---|---|---|
+| Dev set (12 texts) | target 0.30 or more | -0.139 | +0.149 |
+| Held-out set (16 texts) | any positive | +0.104 | -0.121 |
+
+On the held-out set the model signal ranks AI above human, the opposite of the dev
+set. Plain text scores as AI-like and ornate text as human-like, whoever wrote it. So
+signal one tracks writing style, not authorship, and the flip turns one backwards
+ranking into another. The trade is fewer accusations of plain human writers and more
+plain AI text scored as human. Burstiness also failed: the gap between human and AI
+was 0.35 on the dev set and about zero (0.51 against 0.49) on the held-out set. One
+held-out passage got a perplexity of 6.5 (model score 0.957), which suggests gpt2 has
+memorized it; famous texts will score as AI whoever wrote them. Limits: 16 held-out
+texts, one run, and the human passages are famous ones.
 
 
 
