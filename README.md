@@ -388,32 +388,35 @@ comes from `check_appeal.py`.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. False positives | per trial: at most 1 of 10 `ai`, at most 4 of 10 not `human` | 0 `ai`, 0 `human`, 10 `unsure` | same | same | **Miss** |
-| 2. Score spread | AI median at least 0.30 above human; at least 5 of 6 per group on its own side of 0.50 | medians 0.565 vs 0.704, gap **-0.139**; AI above 0.50: 4/6, human below: 0/6 | same | same | **Miss** |
-| 3. Label coverage | each `guess` at least twice per trial; every `guess` matches the thresholds | 16 `unsure`, 0 `ai`, 0 `human` | same | same | **Miss** |
-| 4. Appeal path | 5/5 valid appeals 2xx, `under_review`, logged; 4/4 invalid appeals 4xx, nothing logged | `check_appeal.py`: 17/17 checks | 17/17 | 17/17 | **Pass** |
-| 5. Bad input | every bad body 4xx with `error` + `message`; valid `/submit` still works after each | 7/7 returned 400 | 7/7 | 7/7 | **Pass** |
+| 1. False positives | per trial: at most 1 of 10 `ai`, at most 4 of 10 not `human` | 0 `ai`, 0 `human`, 10 `unsure` | same | same | **MISSED** |
+| 2. Score spread | AI median at least 0.30 above human; at least 5 of 6 per group on its own side of 0.50 | medians AI 0.565 vs human 0.704, gap **-0.139**; AI above 0.50: 4/6, human below: 0/6 | same | same | **MISSED** |
+| 3. Label coverage | each `guess` at least twice per trial; every `guess` matches the thresholds | 16 `unsure`, 0 `ai`, 0 `human` | same | same | **MISSED** |
+| 4. Appeal path | 5/5 valid appeals 2xx, `under_review`, logged; 4/4 invalid appeals 4xx, nothing logged | `check_appeal.py`: 17/17 checks | 17/17 | 17/17 | **MET** |
+| 5. Bad input | every bad body 4xx with `error` + `message`; valid `/submit` still works after each | 7/7 returned 400 | 7/7 | 7/7 | **MET** |
 
 **Notes**
 
-- Criterion 1: not-`human` was 10 against a limit of 4.
+- Criterion 1: not-`human` was 10 against a limit of 4. The `ai` limit held.
 - Criterion 2: the gap has the wrong sign (AI scored lower than human).
 - Criterion 3: the threshold-mapping check passed, but coverage failed.
-- Criterion 4: three runs of `check_appeal.py`, each 17/17. No model is involved.
-- Criterion 5: passes on the 7 `run_eval.py` bodies. `check_bad_input.py` (JSON list,
-  survival check) ran twice; the log holds 9 valid decisions from each run, one per
-  bad request, so the service kept answering.
+- Criterion 4: `check_appeal.py` passed 17/17 three times. `logs/audit.jsonl` holds 15
+  appeals (5 per run), each after its own decision, with its reasoning, and none from
+  the invalid cases. No model is involved.
+- Criterion 5: the 7 `run_eval.py` bodies each returned 400, but it records the
+  status only. The `error`/`message` check and the "valid `/submit` still works"
+  check come from `check_bad_input.py`, which ran twice, not three times.
+- The three model trials were identical, since the model is deterministic here.
+- The `creator_id` check and the 10,000-character cap were already in `app.py` and
+  `config.py` at the 16:24 run (file times 01:29 the same day), after the 2026-11-05
+  attack run. Criterion 5 passing reflects those fixes.
 
-All three trials were identical, since the model is deterministic here. Criterion 4
-was run by hand three times: `check_appeal.py` passed 17/17 each time, and
-`logs/audit.jsonl` holds 15 appeals (5 per run), each after its own decision and each
-with its reasoning, and no appeal entry from any of the invalid cases.
+**Real output**, verbatim from Trial 1 of `results/run_2026-11-10_1624_before.md`
+(`run_eval.py::main` calling `app.py::submit`) unless stated. `sent` is the first 70
+characters of the submitted text. Scores come from `detector.py::model_signal` and
+`stylometry.py::style_signal`, combined in `scoring.py::combine_signals` and labelled
+by `scoring.py::score_to_label`.
 
-**Real output from one trial**: the first Trial 1 entry for "my own writing" in
-`results/run_2026-11-10_1624_before.md`, produced by `run_eval.py::main` calling
-`app.py::submit` (scores from `detector.py::model_signal` and
-`stylometry.py::style_signal`, combined in `scoring.py::combine_signals`, labelled
-by `scoring.py::score_to_label`):
+**Criterion 1, my own writing:** the first of the 10 texts.
 
 ```json
 {
@@ -427,55 +430,140 @@ by `scoring.py::score_to_label`):
 }
 ```
 
+**Criterion 2, score spread:** the first AI text and the first human text of the 12.
+The AI text scored lower on the model signal (0.3353 against 0.7484), the wrong way
+round.
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.3989407268700916,
+    "model_score": 0.3353,
+    "style_score": 0.5474357562336387,
+    "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+    "sent": "Beyond formal sessions on a quiet cushion, meditation's true power lie"
+  },
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.7037762122936421,
+    "model_score": 0.7484,
+    "style_score": 0.5996540409788071,
+    "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+    "sent": "Happiness is a subject that has generated a great deal of debate since"
+  }
+]
+```
+
+**Criterion 3, label coverage:** the first of the 16. All 16 returned `unsure`.
+
+```json
+[
+  {
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.6860722236313346,
+    "model_score": 0.763,
+    "style_score": 0.5065740787711153,
+    "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.",
+    "sent": "Tea is widely celebrated for its rich blend of antioxidants and natura"
+  }
+]
+```
+
+**Criterion 4, appeal path** (`check_appeal.py`, calling `app.py::submit` and
+`app.py::appeal`): the last decision and appeal pair it wrote to `logs/audit.jsonl`.
+The decision is unchanged and the appeal is `under_review` with its reasoning.
+
+```json
+{"timestamp": "2026-11-10T00:15:56+00:00", "content_id": "9f9ebf6b-10be-42f2-8d7d-9a707897b3d2", "creator_id": "check_appeal_a7fd7e0f", "guess": "unsure", "model_score": 0.8418, "style_score": 0.5000671464894362, "combined_score": 0.7392801439468308, "label": "We're not sure whether this was written by a person or an AI. No action is needed; plain, clear writing can look this way.", "status": "decided"}
+{"timestamp": "2026-11-10T00:15:56+00:00", "content_id": "9f9ebf6b-10be-42f2-8d7d-9a707897b3d2", "creator_id": "check_appeal_a7fd7e0f", "event": "appeal", "status": "under_review", "reasoning": "Appeal 5: I believe this (my own writing) was misjudged."}
+```
+
+**Criterion 5, bad input:** the body with no `creator_id`, one of the cases the attack
+run showed the route accepting (RQ02). The `error` and `message` fields are not in
+this output.
+
+```json
+[
+  {
+    "status": 400,
+    "guess": null,
+    "confidence": null,
+    "model_score": null,
+    "style_score": null,
+    "label": null,
+    "sent": "{\"text\": \"A normal sentence with no creator id attached.\"}"
+  }
+]
+```
+
 **Diagnoses**
 
-**Criteria 1, 2, 3: one problem, in signal one, the combining rule and the label
-mapping.**
+**The pattern:** one problem accounts for most of the misses, and two small ones for
+the rest.
+
+- **Signal one and the thresholds** (criteria 1, 2, 3; EV01 to EV09 except EV05;
+  MF05, MF08). Signal one does not separate human from AI on plain text, and the 0.78
+  `ai` threshold needs a model score of about 0.9, which ordinary text does not reach.
+- **Signal two** scores input with no `[a-z0-9']` words as 1.0 (MF06, MF07).
+- **The route** had two validation gaps: `creator_id` (RQ02, RQ06) and text length.
+  The length cap guards against oversized input; it is not why MF08 was labelled `ai`.
+- **Two attacks held only by luck.** MF03 and MF04 had model and style scores far
+  apart (gaps of 0.65 and 0.99), so the disagreement rule returned 0.5. MF06 and MF07
+  agreed, so it did not.
+- No criterion was revised. None was unmeasurable; they were missed.
+
+**Criteria 1, 2, 3: signal one, the combining rule and the thresholds in `config.py`.**
 
 - **Signal one ranks the groups backwards (criterion 2).** On the 12 texts, AI
   `model_score` ran 0.335 to 0.723 and human 0.733 to 0.786, so every human text
   scored above every AI text. gpt2 finds plain prose predictable whoever wrote it,
-  the blind spot already noted in Signals and Scoring. Signal two did not help: AI
-  0.547 to 0.630, human 0.534 to 0.619, a complete overlap.
+  the blind spot noted in Signals and Scoring. Signal two did not help: AI 0.547 to
+  0.630, human 0.534 to 0.619, a complete overlap.
 - **The thresholds are outside the range the signals produce (criteria 3 and 1).**
-  With 0.7/0.3 weights and a style signal between about 0.5 and 0.68, ordinary text
-  scored 0.399 to 0.770 combined, so neither 0.78 nor 0.22 was reached. All 16
-  inputs were `unsure`, and all 10 of my own texts were `unsure`: the `ai` limit
-  held (highest 0.770, 0.010 under), but no text could be `human`. `score_to_label`
-  works as written.
+  With 0.7/0.3 weights and a style signal of about 0.5 to 0.68, ordinary text scored
+  0.399 to 0.770 combined, so neither 0.78 nor 0.22 was reached. All 16 inputs,
+  including all 10 of my own texts, were `unsure`: the `ai` limit held, by
+  0.010 (highest 0.770 against 0.78; FP06 and FP07 held by 0.005), but no text could
+  be `human`. `score_to_label` works as written; the fault is the threshold values it reads.
 - The safe direction held: nobody was accused. The cost is that the service says
   almost nothing on ordinary text.
 
-**The 14 broken attacks (attack run, `logs/audit.jsonl` scores):**
+**The 14 broken attacks (scores from `logs/audit.jsonl`):**
 
 - **EV02, EV03, EV04, EV06, EV07, EV09 (combining rule and thresholds).** Model
-  scores were 0.57 to 0.70 and style 0.32 to 0.62, combined 0.50 to 0.64. Where the
-  targeted signal moved (style 0.355 on EV02, 0.321 on EV06) it pulled combined down
-  to 0.52 and 0.50, but the model scores were already too low for the `ai` label,
-  which with a neutral style score needs about 0.9. On EV04 and EV07 the targeted
-  signal barely moved (model 0.611, style 0.621) and they still broke. Same root
-  cause as the criteria above.
-- **EV01, EV08 (signal one).** Model score fell to 0.1635 (typos) and 0.2452 (text
-  below the token window) while style stayed at 0.613 and 0.537, so the damage was in
-  signal one even though I targeted signal two for EV01. I checked EV01 by correcting
-  its eight typos: perplexity went from 124.8 with typos to 29.0 clean, so the model
-  score went from 0.1635 to 0.6694, while the style score was 0.613 either way.
-- **MF05, MF06, MF07, MF08 (both signals, and the route).** Degenerate input got
-  confident `ai` labels: model 0.998, 0.997, 0.906, 0.988 and style 0.65, 1.0, 1.0,
-  0.817. MF06 and MF07 hit a style score of exactly 1.0 because
-  `stylometry.words` only matches `[a-z0-9']`, so emoji and Arabic give zero words and
-  all three measures return 0.0, which `style_signal` flips to maximum AI-like. MF08 (57,640 characters) was accepted because the route had no length
-  cap then. `MAX_TEXT_CHARS` is 10,000 in `app.py::submit` now.
-- **RQ02, RQ06 (the route).** `creator_id` missing, or an object, was accepted and
+  0.57 to 0.70, style 0.32 to 0.62, combined 0.50 to 0.64. Where the targeted signal
+  moved (style 0.355 on EV02, 0.321 on EV06) it pulled combined down, but the model
+  scores were already too low for `ai`. On EV04 and EV07 it barely moved and they
+  still broke. Caveat: no ordinary input got `ai` in criterion 3, so the unmodified
+  AI texts would probably also have been `unsure`. These may not be breaks the attack
+  caused. I did not run the source texts to check.
+- **EV01, EV08 (signal one).** Model score fell to 0.1635 and 0.2452 while style
+  stayed at 0.613 and 0.537, so the damage was in signal one even though I targeted
+  signal two for EV01. Correcting EV01's eight typos took perplexity from 124.8 to
+  29.0 and the model score from 0.1635 to 0.6694. EV08's perplexity is 90.9, about
+  double the 45 midpoint; I did not test why gpt2 finds that text so surprising.
+- **MF06, MF07 (signal two).** Emoji-only and Arabic text got style 1.0 (model 0.997
+  and 0.906). `stylometry.words` only matches `[a-z0-9']`, so they give zero words,
+  all three measures return 0.0, and `style_signal` flips that to maximum AI-like.
+  The model signal also read them as AI, so the disagreement rule did not step in.
+- **MF05, MF08 (signal one).** Both are repetition: one repeated letter (perplexity
+  1.0) and 881 sentences of which 9 are distinct (perplexity 2.91). gpt2 predicts
+  repeated text almost perfectly, so model scores were 0.9976 and 0.9876. The style
+  signal is not the cause. The 10,000-character cap should now reject MF08 (57,640 characters; not re-run), but
+  length was never the cause, since `detector.perplexity` reads only 400 tokens.
+  By the code, MF05, MF06 and MF07 would still be labelled `ai`; I have not re-run
+  them since the cap.
+- **RQ02, RQ06 (the route).** A missing or object `creator_id` was accepted and
   logged as `null` or `{"id": "x"}`. `app.py::submit` now requires a non-empty
-  string; a missing `creator_id` returns 400 in the run above, and an object
-  `creator_id` (`{"id": "x"}`) now returns 400 `missing_creator_id` when I re-sent it by hand.
-  RQ06's combined score of 0.5 is separate: model 0.049 against style 0.65 is a
-  gap of 0.60, over the 0.50 disagreement gap.
+  string; I re-sent the object case by hand and it returns 400 `missing_creator_id`.
+  RQ06's combined 0.5 is separate: model 0.049 against style 0.65 is a gap of 0.60,
+  over the 0.50 disagreement gap.
 
 **Criteria 4 and 5:** no miss to diagnose.
-
-
 
 ---
 
