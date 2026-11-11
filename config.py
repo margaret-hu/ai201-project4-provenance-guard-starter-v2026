@@ -61,6 +61,14 @@ MAX_TEXT_CHARS = 10_000
 WEIGHT_MODEL_SIGNAL = 0.7
 WEIGHT_STYLE_SIGNAL = 0.3
 
+# The Improvement (ranking): on my calibration texts gpt2 finds the human texts
+# MORE predictable than the AI texts, so the model signal ranks the groups
+# backwards. When True, `combine_signals` uses 1 - model_score. The raw model score
+# is still what `/submit` returns and logs. Set False to restore the old behavior.
+# Caveat, measured in the README: on plain AI text and ornate human text the raw
+# direction is the right one, so this inversion is tuned to my test set.
+MODEL_SIGNAL_INVERTED = True
+
 # If the two signals differ by more than this, neither is trusted: the combined
 # score is pulled to DISAGREEMENT_SCORE, which sits inside the unsure range.
 DISAGREEMENT_GAP = 0.5

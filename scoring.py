@@ -37,6 +37,11 @@ def combine_signals(model_score: float, style_score: float) -> float:
     `config.DISAGREEMENT_GAP` return `config.DISAGREEMENT_SCORE` (inside the
     unsure range) instead. Weights and thresholds live in config.py.
     """
+    # The Improvement: flip the model signal so it ranks my test groups the right
+    # way round. Done before the disagreement check so both rules see the same value.
+    if config.MODEL_SIGNAL_INVERTED:
+        model_score = 1.0 - model_score
+
     # Two methods that split are uncertain, so don't let either one decide.
     if abs(model_score - style_score) > config.DISAGREEMENT_GAP:
         return config.DISAGREEMENT_SCORE
