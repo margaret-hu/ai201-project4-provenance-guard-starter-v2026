@@ -707,23 +707,112 @@ held-out passage got a perplexity of 6.5 (model score 0.957), which suggests gpt
 memorized it; famous texts will score as AI whoever wrote them. Limits: 16 held-out
 texts, one run, and the human passages are famous ones.
 
+---
 
+## The Second Improvement
+
+**What I changed:** only the two thresholds in `config.py`: `HUMAN_THRESHOLD` 0.22 to
+**0.38** and `AI_THRESHOLD` 0.78 to **0.65**. Signals, weights, the flip and `scoring.py`
+are untouched, so every combined score is identical to the first improvement run and only
+the label changes. The bands are now `human` 0.00 to 0.38, `unsure` 0.38 to 0.65 and `ai`
+0.65 to 1.00.
+
+**Which diagnosis pointed at it:** "Criteria 1 and 3: no change in verdict" in The
+Improvement above. My combined scores run about 0.26 to 0.63, so the old thresholds (0.22
+and 0.78) sat outside that range and neither `human` nor `ai` could be reached. I took 0.38
+from my own writing (just above the 7th-lowest score, 0.375). I took 0.65 from the false
+positives: 0.55 would pass criterion 3, but it labels FP08, a genuine 8-word human text
+scored 0.617, as `ai`. I preferred to miss criterion 3 over accusing a real writer.
+
+### Attack Run — After
+
+56 attacks run on 2026-11-10 at 23:33 (full output in
+[results/attack_run_2026-11-10_2333_after2.md](results/attack_run_2026-11-10_2333_after2.md)).
+Same marking rules as before, plus one for prompt injection: broken if the label the
+instruction asked for (`human`) comes back. **46 held, 10 broke.**
+
+| Family | Attacks | Held before | Held after | Held after 2 | Broke after 2 |
+|---|---|---|---|---|---|
+| evasion | 10 | 2 | 1 | 3 | 7 |
+| false_positive | 8 | 8 | 8 | 8 | 0 |
+| prompt_injection | 6 | 6 | 6 | 5 | 1 |
+| malformed | 20 | 14 | 18 | 18 | 2 |
+| flood_same_creator | 12 | 12 | 12 | 12 | 0 |
+| **Total** | **56** | **42** | **45** | **46** | **10** |
+
+**Marks that changed (against The Improvement run):**
+
+| ID | After | After 2 | Why |
+|---|---|---|---|
+| EV01 | `unsure` 0.770, BROKE | `ai` 0.770, **HELD** | Now over the 0.65 line. |
+| EV08 | `unsure` 0.689, BROKE | `ai` 0.689, **HELD** | Same. |
+| PI05 | `unsure` 0.319, HELD | `human` 0.319, **BROKE** | An AI essay with an injected "human" claim got `human`. The 0.319 is the real score, not the injected 0.01, so the `human` threshold did it, not the injection. |
+
+FP02 to FP07 went from `unsure` to `human` (correct, they are human). EV09 went from `unsure`
+to `human` at 0.355, still BROKE but worse. FP08 stays `unsure` at 0.617, **0.033 under the
+`ai` line**. The 10 that break are EV02 to EV04, EV06, EV07, EV09, EV10, PI05, MF03 and MF04.
+
+### Run Log — After
+
+`run_eval.py --label after2`, saved as `results/run_2026-11-10_2334_after2.md`. Scores are
+identical to the first improvement run, since only the thresholds moved.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. False positives | per trial: at most 1 of 10 `ai`, at most 4 of 10 not `human` | 0 `ai`, 7 `human`, 3 `unsure` (0.261 to 0.524) | same | same | **MET** |
+| 2. Score spread | AI median at least 0.30 above human; at least 5 of 6 per group on its own side of 0.50 | medians AI 0.490 vs human 0.341, gap **+0.149**; AI above 0.50: 3/6, human below: 6/6 | same | same | **MISSED** |
+| 3. Label coverage | each `guess` at least twice per trial; every `guess` matches the thresholds | 9 `human`, **0 `ai`**, 7 `unsure` | same | same | **MISSED** |
+| 4. Appeal path | 5/5 valid appeals 2xx, `under_review`, logged; 4/4 invalid appeals 4xx, nothing logged | not re-run | not re-run | not re-run | **MET** (17/17 earlier) |
+| 5. Bad input | every bad body 4xx with `error` + `message`; valid `/submit` still works after each | 6 of 7 at 400; the no-`creator_id` body at 429 (rate limiter) | same | same | **MET** (9/9 earlier) |
+
+Criteria 4 and 5 do not touch scoring, so I did not re-run `check_appeal.py` or
+`check_bad_input.py`; those verdicts rest on the earlier runs. The 429 is the same
+rate-limiter effect as before.
+
+**Did it help, and how do I know:**
+
+**Partly: criterion 1 and the attacks improved a little, criterion 3 did not.**
+
+- **Criterion 1:** MISSED to MET in all three trials. None of my 10 texts is called `ai`.
+- **Criterion 3:** still MISSED. The labels went from 16 `unsure` to 9 `human` and 7 `unsure`,
+  but no ordinary text reaches `ai` (the highest score is 0.630). That is the price of
+  protecting FP08.
+- **Criterion 2:** unchanged at +0.149. Thresholds cannot change a ranking.
+- **Attacks:** 46 held against 45, a net +1 (EV01 and EV08 gained, PI05 lost). None of the 8
+  false-positive attacks is called `ai`.
+- **Cost:** one of the six AI meditation texts (0.377), EV09 and PI05 now read `human`.
+  A wider `human` band lets more AI text get an explicit "probably a person" label.
+
+**Why the result is weaker than it looks:** 0.38 is only 0.005 above the 7th-lowest score on
+my own writing, so criterion 1 is met on these texts and not shown to hold elsewhere. FP08
+(0.617, genuine human) and the highest AI meditation text (0.630) are too close for any
+threshold to separate. I did not re-run the held-out check, and its finding still applies:
+plain AI text scores as human-like because of the flip.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
+Ten attacks still break and criteria 2 and 3 are still missed.
 
+| What | What I'd do | Why I stopped |
+|---|---|---|
+| **MF03, MF04** (control characters, punctuation only) get `ai` at 0.895 and 0.992 | Return `unsure` for text under a minimum number of real words. I tried it: on the saved scores it also fixes MF05 and MF06. | This improvement was scoped to one change, so I took it out. It is the smallest fix here. |
+| **EV02, EV03, EV06, EV07** stay `unsure` at 0.382 to 0.476 | Nothing cheap. The style signal is three surface measures that editing can change. | Replacing it is a bigger job than a threshold. |
+| **EV04** (0.454), **EV09** (0.355) and **PI05** (0.319) | Score the text in chunks and look at the most AI-like chunk, not the average. | The detector reads only the first 400 tokens, so this means a new detector design. |
+| **EV10** (repeated stanzas) is `unsure` at 0.500 | Fix the model signal: flipped 0.021 against style 0.730 trips the disagreement rule. | The flip put the two signals on opposite sides, and I'd need a signal that is not tuned to my test set. |
+| **Criterion 2** (+0.149 against a target of +0.30) | A better first signal, or a classifier fitted to 100 or more labelled texts of mixed style. | The held-out check showed the flip reverses on plain AI text, and thresholds cannot change a ranking. |
+| **Criterion 3** (0 `ai` on ordinary text) | Lowering `AI_THRESHOLD` far enough to reach the highest AI text (0.630) would accuse FP08 (0.617). Fixing it properly needs the minimum-length rule above plus a better signal. | I chose to miss the criterion rather than accuse a real writer. |
 
+Two caveats apply to everything: I chose 0.38 from my own writing, so criterion 1 is met on
+my texts and not shown to hold elsewhere, and FP08 sits only 0.033 under the `ai` line.
 
-**The trade I'd make if this ran for real:**
-
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
-
-
+**The trade I'd make if this ran for real:** I would keep the `ai` threshold at 0.65 or
+higher and never act on an `ai` label without a person looking, because a false accusation
+lands on a writer (a student or a job applicant) who may lose a grade or a chance, while a
+missed AI text only costs the reviewer a bit of false reassurance. The reviewers pay for
+that, and the service as shipped says `ai` on almost nothing ordinary, which I'd state
+plainly instead of hiding.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
